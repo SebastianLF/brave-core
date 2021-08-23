@@ -178,19 +178,33 @@ void BitflyerAuthorization::OnClaimWallet(
     const std::string& linking_info,
     ledger::ExternalWalletAuthorizationCallback callback) {
   auto wallet_ptr = ledger_->bitflyer()->GetWallet();
+  if (!wallet_ptr) {
+    BLOG(0, "bitFlyer wallet is null!");
+    return callback(type::Result::LEDGER_ERROR, {});
+  }
+
   if (result == type::Result::ALREADY_EXISTS) {
-    BLOG(0, "Wallet linking limit reached");
+    BLOG(0, "Wallet linking limit reached!");
+
     ledger_->ledger_client()->ShowNotification(
         ledger::notifications::kWalletDeviceLimitReached, {},
         [](type::Result) {});
 
-    std::string event_text = "bitflyer";
-    if (wallet_ptr)
-      event_text += "/" + wallet_ptr->address.substr(0, 5);
+    ledger_->database()->SaveEventLog(
+        log::kDeviceLimitReached, constant::kWalletBitflyer + std::string("/") +
+                                      wallet_ptr->address.substr(0, 5));
+    return callback(type::Result::ALREADY_EXISTS, {});
+  }
 
-    ledger_->database()->SaveEventLog(log::kDeviceLimitReached, event_text);
-    callback(result, {});
-    return;
+  if (result == type::Result::TOO_MANY_RESULTS) {
+    BLOG(0, "Mismatched bitFlyer accounts!");
+
+    ledger_->database()->SaveEventLog(log::kMismatchedProviderAccounts,
+                                      constant::kWalletBitflyer +
+                                          std::string("/") +
+                                          wallet_ptr->address.substr(0, 5));
+
+    return callback(type::Result::TOO_MANY_RESULTS, {});
   }
 
   if (result != type::Result::LEDGER_OK) {
